@@ -1,0 +1,27 @@
+{
+  "name": "duel-link",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Duel Link — sword-fight with your phones on one screen. Sunjam hackathon game.",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "zip": "npm run build && cd dist && zip -r ../duel-link-itch.zip . && cd .. && echo 'Upload duel-link-itch.zip to itch.io as an HTML5 game'",
+    "test:e2e": "node tests/e2e.mjs"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.5",
+    "qrcode": "^1.5.4",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
+    "playwright-core": "^1.55.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}
