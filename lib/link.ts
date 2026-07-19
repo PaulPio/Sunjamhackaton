@@ -1,20 +1,8 @@
-// Transport layer. Two ways a controller can reach the screen:
-//  1. PeerJS (WebRTC data channel via the free public signaling cloud) — real
-//     phones anywhere on the internet, no backend of our own.
-//  2. BroadcastChannel — another tab in the same browser. Used by the ?sim=1
-//     keyboard controller and the automated tests; also a handy fallback when
-//     the PeerJS cloud is unreachable.
-// The screen listens on both at once.
+// Transport: PeerJS (WebRTC) for real phones + BroadcastChannel for same-browser sim.
 
 import Peer, { type DataConnection } from 'peerjs';
 import { localChannelForRoom, peerIdForRoom } from './protocol';
 
-// STUN alone (PeerJS's bare default) only works when a device can find a
-// direct path — e.g. the same Wi-Fi as the host. A second phone on a
-// stricter network (cellular, guest Wi-Fi, symmetric NAT) needs a TURN
-// relay or its connection just hangs until it times out. Open Relay
-// Project's free public TURN server fixes that at no cost — it's the
-// standard fallback for demos/hackathons that can't run their own TURN.
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:openrelay.metered.ca:80' },
@@ -30,22 +18,22 @@ const PEER_OPTS = { config: { iceServers: ICE_SERVERS } };
 
 export interface Link {
   send(msg: unknown): void;
-  onMessage(cb: (msg: any) => void): void;
+  onMessage(cb: (msg: unknown) => void): void;
   onClose(cb: () => void): void;
   close(): void;
 }
 
 class Emitter {
-  private msgCbs: Array<(m: any) => void> = [];
+  private msgCbs: Array<(m: unknown) => void> = [];
   private closeCbs: Array<() => void> = [];
   closed = false;
-  onMessage(cb: (m: any) => void) {
+  onMessage(cb: (m: unknown) => void) {
     this.msgCbs.push(cb);
   }
   onClose(cb: () => void) {
     this.closeCbs.push(cb);
   }
-  emitMessage(m: any) {
+  emitMessage(m: unknown) {
     for (const cb of this.msgCbs) cb(m);
   }
   emitClose() {
@@ -54,10 +42,6 @@ class Emitter {
     for (const cb of this.closeCbs) cb();
   }
 }
-
-// ---------------------------------------------------------------------------
-// PeerJS
-// ---------------------------------------------------------------------------
 
 class PeerLink extends Emitter implements Link {
   constructor(private conn: DataConnection) {
@@ -84,10 +68,6 @@ export type HostStatus =
   | { kind: 'offline'; reason: string }
   | { kind: 'connecting' };
 
-/**
- * Listen for controllers over PeerJS. Non-fatal if the signaling cloud is
- * unreachable — local (same-browser) controllers still work via startLocalHost.
- */
 export function startPeerHost(
   code: string,
   onLink: (link: Link) => void,
@@ -102,10 +82,8 @@ export function startPeerHost(
   peer.on('connection', (conn) => {
     conn.on('open', () => onLink(new PeerLink(conn)));
   });
-  peer.on('error', (err: any) => {
+  peer.on('error', (err: Error & { type?: string }) => {
     if (stopped) return;
-    // 'unavailable-id' = another screen holds this code; anything network-ish
-    // means the cloud is unreachable. Either way, local play still works.
     onStatus({ kind: 'offline', reason: String(err?.type ?? err) });
   });
   peer.on('disconnected', () => {
@@ -129,11 +107,8 @@ export function connectPeerController(code: string, timeoutMs = 16000): Promise<
       peer.destroy();
       reject(new Error(why));
     };
-    // TURN relay allocation adds a round trip on top of plain STUN, so a
-    // stricter-network device legitimately needs a bit longer than a
-    // same-Wi-Fi one before we call it a real timeout.
     const timer = setTimeout(() => fail('Connection timed out'), timeoutMs);
-    peer.on('error', (err: any) => fail(String(err?.type ?? err)));
+    peer.on('error', (err: Error & { type?: string }) => fail(String(err?.type ?? err)));
     peer.on('open', () => {
       const conn = peer.connect(peerIdForRoom(code), { reliable: true });
       conn.on('open', () => {
@@ -144,19 +119,10 @@ export function connectPeerController(code: string, timeoutMs = 16000): Promise<
         link.onClose(() => peer.destroy());
         resolve(link);
       });
-      conn.on('error', (err: any) => fail(String(err?.type ?? err)));
+      conn.on('error', (err: Error) => fail(String(err)));
     });
   });
 }
-
-// ---------------------------------------------------------------------------
-// BroadcastChannel (same-browser tabs: sim controllers + tests)
-// ---------------------------------------------------------------------------
-// BroadcastChannel is a shared bus, so we multiplex per-controller sessions:
-//   {k:'hello', id}            controller -> host: request to join
-//   {k:'helloAck', id}         host -> controller: session accepted
-//   {k:'msg', id, dir, data}   payload; dir 'c2h' | 'h2c'
-//   {k:'bye', id, dir}         either side hangs up
 
 class LocalLink extends Emitter implements Link {
   constructor(

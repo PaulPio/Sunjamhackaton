@@ -1,21 +1,22 @@
-// Authoritative combat state machine. Pure logic — no DOM, no rendering —
-// so it's easy to reason about and drive from tests. Time is injected.
-
-import type { GamePhase, PlayerIndex, SwingDir } from '../shared/protocol';
+import type { GamePhase, PlayerIndex, SwingDir } from './protocol';
 
 export const HP_MAX = 100;
 export const STAMINA_MAX = 100;
 const STAMINA_COST = 30;
-const STAMINA_REGEN_PER_S = 30;
-const WEAK_FACTOR = 0.35; // swings with empty stamina barely tickle
+const STAMINA_REGEN_PER_S = 28;
+/** Stamina drained per second while holding a block. */
+const BLOCK_DRAIN_PER_S = 22;
+/** Extra stamina cost when a blocked hit lands on your guard. */
+const BLOCK_HIT_COST = 12;
+const WEAK_FACTOR = 0.35;
 const SWING_COOLDOWN_MS = 500;
-const PARRY_WINDOW_MS = 250; // block raised this recently = perfect block
+const PARRY_WINDOW_MS = 250;
 const PARRY_STUN_MS = 900;
 const DMG_BASE = 8;
-const DMG_SCALE = 9; // dmg = 8..17 by swing intensity
-const COUNTDOWN_STEP_MS = 800; // 3.. 2.. 1.. FIGHT
+const DMG_SCALE = 9;
+const COUNTDOWN_STEP_MS = 800;
 const ROUND_END_LINGER_MS = 2600;
-const REMATCH_LOCKOUT_MS = 1200; // ignore leftover swings right after match end
+const REMATCH_LOCKOUT_MS = 1200;
 export const WINS_NEEDED = 2;
 
 export interface Fighter {
@@ -30,11 +31,11 @@ export interface Fighter {
 
 export type GameEvent =
   | { e: 'phase'; phase: GamePhase }
-  | { e: 'countdown'; n: number } // 3, 2, 1, then 0 = FIGHT
+  | { e: 'countdown'; n: number }
   | { e: 'swing'; attacker: PlayerIndex; dir: SwingDir; intensity: number }
   | { e: 'hit'; attacker: PlayerIndex; dmg: number }
   | { e: 'blocked'; attacker: PlayerIndex }
-  | { e: 'parried'; attacker: PlayerIndex } // attacker is now stunned
+  | { e: 'parried'; attacker: PlayerIndex }
   | { e: 'roundEnd'; winner: PlayerIndex }
   | { e: 'matchEnd'; winner: PlayerIndex };
 
@@ -68,6 +69,9 @@ export class Game {
 
   onEvent(cb: (ev: GameEvent) => void) {
     this.listeners.push(cb);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== cb);
+    };
   }
   private emit(ev: GameEvent) {
     for (const cb of this.listeners) cb(ev);
@@ -78,7 +82,6 @@ export class Game {
     this.emit({ e: 'phase', phase });
   }
 
-  /** Start (or restart) a whole match. solo = fighter 1 is a training dummy. */
   startMatch(solo: boolean, now: number) {
     this.solo = solo;
     this.roundWins = [0, 0];
@@ -89,7 +92,7 @@ export class Game {
   private beginRound(now: number) {
     this.fighters = [freshFighter(), freshFighter(this.solo)];
     this.countdownLeft = 3;
-    this.nextTickAt = now; // fire the first tick immediately
+    this.nextTickAt = now;
     this.setPhase('countdown');
   }
 
@@ -115,7 +118,7 @@ export class Game {
     }
     if (this.phase !== 'fight') return;
     const me = this.fighters[i];
-    const foe = this.fighters[1 - i];
+    const foe = this.fighters[(1 - i) as PlayerIndex];
     if (now < me.stunnedUntil) return;
     if (now - me.lastSwingAt < SWING_COOLDOWN_MS) return;
     me.lastSwingAt = now;
@@ -126,11 +129,21 @@ export class Game {
     const dmg = Math.round((DMG_BASE + DMG_SCALE * intensity) * (hasStamina ? 1 : WEAK_FACTOR));
 
     if (foe.blocking) {
-      if (now - foe.blockSince < PARRY_WINDOW_MS && !foe.isDummy) {
+      foe.stamina = Math.max(0, foe.stamina - BLOCK_HIT_COST);
+      if (foe.stamina <= 0) {
+        foe.blocking = false;
+      }
+      if (now - foe.blockSince < PARRY_WINDOW_MS && !foe.isDummy && foe.blocking) {
         me.stunnedUntil = now + PARRY_STUN_MS;
         this.emit({ e: 'parried', attacker: i });
-      } else {
+      } else if (foe.blocking) {
         this.emit({ e: 'blocked', attacker: i });
+      } else {
+        // Guard broke from stamina — hit goes through at reduced force.
+        const breakDmg = Math.round(dmg * 0.6);
+        foe.hp = Math.max(0, foe.hp - breakDmg);
+        this.emit({ e: 'hit', attacker: i, dmg: breakDmg });
+        if (foe.hp <= 0) this.endRound(i, now);
       }
       return;
     }
@@ -141,6 +154,12 @@ export class Game {
 
   setBlock(i: PlayerIndex, on: boolean, now: number) {
     const f = this.fighters[i];
+    if (on && f.stamina <= 0) {
+      if (f.blocking) {
+        f.blocking = false;
+      }
+      return;
+    }
     if (f.blocking === on) return;
     f.blocking = on;
     if (on) f.blockSince = now;
@@ -169,15 +188,21 @@ export class Game {
     }
 
     if (this.phase === 'fight') {
-      for (const f of this.fighters) {
-        f.stamina = Math.min(STAMINA_MAX, f.stamina + STAMINA_REGEN_PER_S * dt);
+      for (let i = 0; i < 2; i++) {
+        const f = this.fighters[i];
+        if (f.blocking) {
+          f.stamina = Math.max(0, f.stamina - BLOCK_DRAIN_PER_S * dt);
+          if (f.stamina <= 0) {
+            f.blocking = false;
+          }
+        } else {
+          f.stamina = Math.min(STAMINA_MAX, f.stamina + STAMINA_REGEN_PER_S * dt);
+        }
       }
-      // Training dummy: throws its guard up now and then, never attacks and
-      // never parries (blockSince stays honest but parry is gated on !isDummy).
       if (this.solo) {
         const dummy = this.fighters[1];
         if (dummy.blocking && now >= this.dummyBlockUntil) this.setBlock(1, false, now);
-        if (!dummy.blocking && now >= this.dummyNextActionAt) {
+        if (!dummy.blocking && now >= this.dummyNextActionAt && dummy.stamina > 20) {
           this.setBlock(1, true, now);
           this.dummyBlockUntil = now + 500 + Math.random() * 500;
           this.dummyNextActionAt = now + 1400 + Math.random() * 1400;

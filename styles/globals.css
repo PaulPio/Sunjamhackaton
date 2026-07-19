@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --p1: #ff2d75;
+  --p2: #00e5ff;
+  --bg: #05010d;
+  --text: #d9f1ff;
+  --player-color: #d9f1ff;
+}
+
+html,
+body,
+#__next {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Rajdhani, Segoe UI, sans-serif;
+}
+
+body {
+  overflow: hidden;
+}
+
+.flash-red {
+  animation: flashRed 0.35s ease-out;
+}
+.flash-white {
+  animation: flashWhite 0.25s ease-out;
+}
+.flash-gold {
+  animation: flashGold 0.4s ease-out;
+}
+
+@keyframes flashRed {
+  from {
+    background: rgba(255, 40, 80, 0.55);
+  }
+  to {
+    background: transparent;
+  }
+}
+@keyframes flashWhite {
+  from {
+    background: rgba(220, 240, 255, 0.4);
+  }
+  to {
+    background: transparent;
+  }
+}
+@keyframes flashGold {
+  from {
+    background: rgba(255, 215, 90, 0.5);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.ctl-bar-fill {
+  transform-origin: left center;
+  transition: transform 0.1s linear;
+}

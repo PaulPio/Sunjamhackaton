@@ -1,8 +1,4 @@
-// Simulated controller (?sim=1): keyboard/buttons stand in for phone motion.
-// Used for solo dev without phones and by the automated e2e tests, which
-// drive it through the window.__ctl hook.
-
-import type { Quat, SwingDir } from '../shared/protocol';
+import type { Quat, SwingDir } from './protocol';
 import type { SensorEvents, SensorHandle } from './sensors';
 
 declare global {
@@ -15,12 +11,17 @@ declare global {
   }
 }
 
-/** Euler ZXY -> quat, same frame as real sensors (device world: X east, Y north, Z up). */
 function euler(alphaDeg: number, betaDeg: number, gammaDeg: number): Quat {
   const h = Math.PI / 360;
-  const z = alphaDeg * h, x = betaDeg * h, y = gammaDeg * h;
-  const cX = Math.cos(x), cY = Math.cos(y), cZ = Math.cos(z);
-  const sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+  const z = alphaDeg * h,
+    x = betaDeg * h,
+    y = gammaDeg * h;
+  const cX = Math.cos(x),
+    cY = Math.cos(y),
+    cZ = Math.cos(z);
+  const sX = Math.sin(x),
+    sY = Math.sin(y),
+    sZ = Math.sin(z);
   return [
     sX * cY * cZ - cX * sY * sZ,
     cX * sY * cZ + sX * cY * sZ,
@@ -31,10 +32,9 @@ function euler(alphaDeg: number, betaDeg: number, gammaDeg: number): Quat {
 
 export function startSimSensors(ev: SensorEvents, onCalibrate: () => void): SensorHandle {
   let blocking = false;
-  let beta = 80; // near-upright "sword" pose
+  let beta = 80;
   let alpha = 0;
 
-  // Idle sway so the on-screen sword visibly belongs to a live controller.
   const sway = setInterval(() => {
     const t = performance.now() / 1000;
     const b = blocking ? 5 : beta + Math.sin(t * 1.3) * 6;
