@@ -248,6 +248,19 @@ button { font-family: inherit; cursor: pointer; }
   padding: 0.1rem 0.4rem;
 }
 
+.ctl-warn {
+  margin: 0 1.1rem 0.6rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: #ffd75a;
+  background: rgba(255, 215, 90, 0.1);
+  border: 1px solid #ffd75a;
+  border-radius: 10px;
+}
+
 .ctl-stage {
   flex: 1;
   display: flex;

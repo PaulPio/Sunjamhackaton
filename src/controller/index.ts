@@ -40,12 +40,27 @@ export function startController(root: HTMLElement, roomFromUrl: string | null, o
         <span id="ctlRoomLabel" class="ctl-room"></span>
         ${opts.sim ? '<span class="ctl-sim-badge">SIM</span>' : ''}
       </header>
+      <p id="ctlBraveNotice" class="ctl-warn hidden">
+        ⚠️ Brave's Shields block phone↔screen connections. Tap the Shields (lion) icon in the
+        address bar and turn Shields off for this site, or open this link in Chrome/Safari instead.
+      </p>
       <main id="ctlStage" class="ctl-stage"></main>
     </div>`;
   const stage = document.getElementById('ctlStage')!;
   const flashEl = document.getElementById('ctlFlash')!;
   const playerEl = document.getElementById('ctlPlayer')!;
   const roomEl = document.getElementById('ctlRoomLabel')!;
+
+  // Brave's Shields restrict WebRTC by default (blocks non-proxied UDP ICE
+  // candidates to prevent IP-address fingerprinting), which silently breaks
+  // the phone<->screen connection with no error the site can detect after
+  // the fact. navigator.brave is the only reliable way to catch this before
+  // the player wastes time on a doomed connection attempt.
+  (navigator as any).brave?.isBrave?.()
+    .then((isBrave: boolean) => {
+      if (isBrave) document.getElementById('ctlBraveNotice')?.classList.remove('hidden');
+    })
+    .catch(() => {});
 
   let link: Link | null = null;
   let sensors: SensorHandle | null = null;
@@ -96,7 +111,9 @@ export function startController(root: HTMLElement, roomFromUrl: string | null, o
       showMessage(
         `Couldn't reach the screen for code <b>${code}</b>.<br>` +
           `<small>${err instanceof Error ? err.message : err}</small><br>` +
-          `<small>Make sure the arena is open on the desktop and you're online.</small>`,
+          `<small>Make sure the arena is open on the desktop and you're online.</small><br>` +
+          `<small>Using Brave, Firefox strict privacy mode, or an ad-blocker? Try disabling ` +
+          `shields/privacy protection for this site, or switch browsers.</small>`,
         true,
       );
       return;
